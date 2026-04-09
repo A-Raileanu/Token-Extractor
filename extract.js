@@ -124,6 +124,111 @@ function valueKeyForMode(mode) {
   return mode.parentModeId ?? mode.modeId;
 }
 
+// ─── Semantic Token Transformations ───────────────────────────────────────────
+
+/**
+ * Linearise a sRGB channel (0–1) to linear light for OKLCH conversion.
+ */
+function linearize(c) {
+  return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+}
+
+/**
+ * Convert a Figma COLOR { r, g, b, a } (all 0–1) to an oklch() CSS string.
+ * Uses the Björn Ottosson Oklab matrices.
+ */
+function colorToOklch({ r, g, b, a }) {
+  const rl = linearize(r), gl = linearize(g), bl = linearize(b);
+
+  // Linear RGB → LMS
+  const l = 0.4122214708 * rl + 0.5363325363 * gl + 0.0514459929 * bl;
+  const m = 0.2119034982 * rl + 0.6806995451 * gl + 0.1073969566 * bl;
+  const s = 0.0883024619 * rl + 0.2817188376 * gl + 0.6299787005 * bl;
+  const l_ = Math.cbrt(l), m_ = Math.cbrt(m), s_ = Math.cbrt(s);
+
+  // LMS → Oklab
+  const L =  0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_;
+  const A =  1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+  const B =  0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+
+  // Oklab → OKLCH
+  const C = Math.sqrt(A * A + B * B);
+  const H = ((Math.atan2(B, A) * 180 / Math.PI) + 360) % 360;
+
+  const Lf = +(L.toFixed(4));
+  const Cf = +(C.toFixed(4));
+  const Hf = +(H.toFixed(2));
+  const af = Math.round(a * 1000) / 1000;
+
+  return af >= 1
+    ? `oklch(${Lf} ${Cf} ${Hf})`
+    : `oklch(${Lf} ${Cf} ${Hf} / ${af})`;
+}
+
+/**
+ * Follow a VARIABLE_ALIAS chain to its terminal raw value.
+ * At each hop uses the first mode value of the target variable
+ * (correct for single-mode primitives; a safe default otherwise).
+ * Returns the resolved value, or null on failure / circular reference.
+ */
+function resolveAliasChain(rawValue, allVariables) {
+  let current = rawValue;
+  const visited = new Set();
+  while (current && typeof current === 'object' && current.type === 'VARIABLE_ALIAS') {
+    if (visited.has(current.id)) return null; // circular guard
+    visited.add(current.id);
+    const target = allVariables[current.id];
+    if (!target) return null;
+    const vals = Object.values(target.valuesByMode ?? {});
+    if (!vals.length) return null;
+    current = vals[0];
+  }
+  if (current === null || current === undefined) return null;
+  if (typeof current === 'object' && current.type === 'VARIABLE_ALIAS') return null;
+  return current;
+}
+
+/**
+ * Classify a collection by its semantic role.
+ * Returns 'primitives' | 'semantics' | 'typography' | 'other'.
+ */
+function collectionRole(col, modeIdToCollectionName) {
+  const baseName = toSlug(col.name);
+  if (baseName === 'primitives') return 'primitives';
+  if (baseName === 'semantics')  return 'semantics';
+  if (baseName === 'typography') return 'typography';
+  if (col.isExtension) {
+    const parentModeId = col.modes[0]?.parentModeId;
+    const parentName   = parentModeId ? modeIdToCollectionName[parentModeId]?.toLowerCase() : null;
+    if (parentName === 'semantics')  return 'semantics';
+    if (parentName === 'typography') return 'typography';
+  }
+  return 'other';
+}
+
+/**
+ * Return true when this FLOAT variable should be emitted as a rem value.
+ *
+ * Semantics collection → spatial tokens: size/, border/, radius/
+ */
+function shouldConvertToRem(variableName, role) {
+  const lower = variableName.toLowerCase();
+  if (role === 'semantics') {
+    return lower.startsWith('size/')
+        || lower.startsWith('border/')
+        || lower.startsWith('radius/');
+  }
+  return false;
+}
+
+/**
+ * Convert a raw px number to a rem CSS string.
+ * Zero is returned without a unit (universally valid in CSS).
+ */
+function pxToRem(px) {
+  return px === 0 ? '0' : `${+(px / 16).toFixed(4)}rem`;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -204,6 +309,17 @@ async function main() {
       .map(vid => allVariables[vid])
       .filter(Boolean);
 
+    const role          = collectionRole(collection, modeIdToCollectionName);
+    const convertColors = role !== 'primitives'; // OKLCH for all non-primitive colors
+    const convertRem    = role === 'semantics'; // rem for spatial tokens in semantics
+
+    // For the primitives collection, pre-sort variables into groups.
+    const PRIMITIVE_GROUP_ORDER = ['color', 'font', 'spacing', 'border', 'rounded', 'effects'];
+    const primitiveGroup = varName => {
+      const first = varName.toLowerCase().split('/')[0];
+      return PRIMITIVE_GROUP_ORDER.includes(first) ? first : 'other';
+    };
+
     const lines = [];
 
     for (let modeIndex = 0; modeIndex < collection.modes.length; modeIndex++) {
@@ -217,8 +333,30 @@ async function main() {
       lines.push(`/* ${collection.name} — ${mode.name} */`);
       lines.push(`${selector} {`);
 
-      for (const variable of variables) {
-        if (variable.name.startsWith('_')) continue; // skip internal vars
+      let orderedVariables = variables.filter(v => !v.name.startsWith('_'));
+
+      if (role === 'primitives') {
+        const buckets = Object.fromEntries(
+          [...PRIMITIVE_GROUP_ORDER, 'other'].map(g => [g, []])
+        );
+        for (const v of orderedVariables) buckets[primitiveGroup(v.name)].push(v);
+        orderedVariables = [
+          ...PRIMITIVE_GROUP_ORDER.flatMap(g => buckets[g]),
+          ...buckets['other'],
+        ];
+      }
+
+      let lastGroup = '';
+      for (const variable of orderedVariables) {
+        // Emit a section banner when the group changes (primitives only)
+        if (role === 'primitives') {
+          const group = primitiveGroup(variable.name);
+          if (group !== lastGroup && group !== 'other') {
+            lines.push('');
+            lines.push(`  /* ── ${group.toUpperCase()} ${'─'.repeat(Math.max(0, 52 - group.length))} */`);
+          }
+          lastGroup = group;
+        }
 
         const rawValue = variable.valuesByMode?.[valueKey];
         const cssName  = varCssNameMap[variable.id];
@@ -226,15 +364,45 @@ async function main() {
         let cssValue;
 
         if (rawValue && typeof rawValue === 'object' && rawValue.type === 'VARIABLE_ALIAS') {
-          const targetName = varCssNameMap[rawValue.id];
-          cssValue = targetName
-            ? `var(${targetName})`
-            : `/* unresolved alias: ${rawValue.id} */`;
-          if (!targetName) {
-            console.warn(`  Warning: unresolved alias ${rawValue.id} for ${variable.name}`);
+          if (convertColors && variable.resolvedType === 'COLOR') {
+            // Resolve alias chain → output OKLCH
+            const resolved = resolveAliasChain(rawValue, allVariables);
+            const isColor  = resolved && typeof resolved === 'object' && 'r' in resolved;
+            if (isColor) {
+              cssValue = colorToOklch(resolved);
+            } else {
+              const t = varCssNameMap[rawValue.id];
+              if (!t) console.warn(`  Warning: unresolved alias ${rawValue.id} for ${variable.name}`);
+              cssValue = t ? `var(${t})` : `/* unresolved alias: ${rawValue.id} */`;
+            }
+          } else if (convertRem && variable.resolvedType === 'FLOAT' && shouldConvertToRem(variable.name, role)) {
+            // Resolve alias chain → output rem
+            const resolved = resolveAliasChain(rawValue, allVariables);
+            if (typeof resolved === 'number') {
+              cssValue = pxToRem(resolved);
+            } else {
+              const t = varCssNameMap[rawValue.id];
+              if (!t) console.warn(`  Warning: unresolved alias ${rawValue.id} for ${variable.name}`);
+              cssValue = t ? `var(${t})` : `/* unresolved alias: ${rawValue.id} */`;
+            }
+          } else {
+            const targetName = varCssNameMap[rawValue.id];
+            cssValue = targetName
+              ? `var(${targetName})`
+              : `/* unresolved alias: ${rawValue.id} */`;
+            if (!targetName) {
+              console.warn(`  Warning: unresolved alias ${rawValue.id} for ${variable.name}`);
+            }
           }
         } else {
-          cssValue = formatValue(rawValue, variable.resolvedType) ?? `/* no value */`;
+          // Direct value
+          if (convertColors && variable.resolvedType === 'COLOR' && rawValue && typeof rawValue === 'object' && 'r' in rawValue) {
+            cssValue = colorToOklch(rawValue);
+          } else if (convertRem && variable.resolvedType === 'FLOAT' && shouldConvertToRem(variable.name, role) && typeof rawValue === 'number') {
+            cssValue = pxToRem(rawValue);
+          } else {
+            cssValue = formatValue(rawValue, variable.resolvedType) ?? `/* no value */`;
+          }
         }
 
         lines.push(`  ${cssName}: ${cssValue};`);

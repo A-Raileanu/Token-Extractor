@@ -1,2 +1,4 @@
 .env
-output/
+.agents/
+.claude/
+skills-lock.json

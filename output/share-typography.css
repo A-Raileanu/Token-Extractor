@@ -7,10 +7,10 @@
   --subhead-mobile-lg-size: var(--font-size-24);
   --subhead-mobile-lg-weight: var(--font-weight-500);
   --subhead-mobile-lg-line-height: var(--font-line-height-32);
-  --subhead-mobile-lg-spacing: var(--font-spacing-0-5);
+  --subhead-mobile-lg-spacing: var(--font-spacing--0-5);
   --subhead-mobile-md-weight: var(--font-weight-500);
   --subhead-mobile-md-line-height: var(--font-line-height-28);
-  --subhead-mobile-md-spacing: var(--font-spacing-0-5);
+  --subhead-mobile-md-spacing: var(--font-spacing--0-5);
   --subhead-mobile-sm-weight: var(--font-weight-500);
   --subhead-mobile-sm-line-height: var(--font-line-height-24);
   --subhead-mobile-sm-spacing: var(--font-spacing-0);
@@ -42,27 +42,27 @@
   --heading-desktop-md-size: var(--font-size-30);
   --heading-desktop-md-weight: var(--font-weight-500);
   --heading-desktop-md-line-height: var(--font-line-height-36);
-  --heading-desktop-md-spacing: var(--font-spacing-1);
+  --heading-desktop-md-spacing: var(--font-spacing--1);
   --heading-desktop-lg-size: var(--font-size-36);
   --heading-desktop-lg-weight: var(--font-weight-600);
   --heading-desktop-lg-line-height: var(--font-line-height-40);
-  --heading-desktop-lg-spacing: var(--font-spacing-1);
+  --heading-desktop-lg-spacing: var(--font-spacing--1);
   --heading-desktop-xl-size: var(--font-size-48);
   --heading-desktop-xl-weight: var(--font-weight-600);
   --heading-desktop-xl-line-height: var(--font-line-height-48);
-  --heading-desktop-xl-spacing: var(--font-spacing-2);
+  --heading-desktop-xl-spacing: var(--font-spacing--2);
   --heading-mobile-sm-size: var(--font-size-18);
   --heading-mobile-sm-weight: var(--font-weight-600);
   --heading-mobile-sm-line-height: var(--font-line-height-28);
-  --heading-mobile-sm-spacing: var(--font-spacing-0-5);
+  --heading-mobile-sm-spacing: var(--font-spacing--0-5);
   --heading-mobile-md-size: var(--font-size-24);
   --heading-mobile-md-weight: var(--font-weight-600);
   --heading-mobile-md-line-height: var(--font-line-height-32);
-  --heading-mobile-md-spacing: var(--font-spacing-0-5);
+  --heading-mobile-md-spacing: var(--font-spacing--0-5);
   --heading-mobile-lg-size: var(--font-size-32);
   --heading-mobile-lg-weight: var(--font-weight-600);
   --heading-mobile-lg-line-height: var(--font-line-height-36);
-  --heading-mobile-lg-spacing: var(--font-spacing-0-5);
+  --heading-mobile-lg-spacing: var(--font-spacing--0-5);
 }
 
 /* Share — Arabic */

@@ -58,14 +58,22 @@ async function figmaGet(endpoint) {
 /**
  * Convert a display name to a CSS-safe kebab-case slug.
  * Handles slashes (Figma variable paths), spaces, and special chars.
+ *
+ * Negative numeric path segments are preserved with a double-dash prefix so
+ * they don't collide with their positive counterparts:
+ *   effects/spread/-2  →  effects-spread--2   (--effects-spread--2)
+ *   effects/spread/2   →  effects-spread-2    (--effects-spread-2)
  */
 function toSlug(name) {
   return name
     .toLowerCase()
-    .replace(/\//g, '-')            // Figma path separator → dash
-    .replace(/[^a-z0-9-]/g, '-')   // anything else → dash
-    .replace(/-+/g, '-')            // collapse multiple dashes
-    .replace(/^-|-$/g, '');         // trim leading/trailing dashes
+    .replace(/\s+/g, '-')                              // spaces → single dash (before other transforms)
+    .replace(/\/(-?\d+)/g, (_, n) =>                  // numeric path segments: /10 → -10, /-10 → --10
+      n.startsWith('-') ? `--${n.slice(1)}` : `-${n}`)
+    .replace(/\//g, '-')                               // remaining path separators → dash
+    .replace(/[^a-z0-9-]/g, '-')                      // anything else → dash
+    .replace(/-{3,}/g, '--')                           // collapse 3+ dashes to double (safety net)
+    .replace(/^-+|-+$/g, '');                          // trim leading/trailing dashes
 }
 
 /**
@@ -213,14 +221,27 @@ function collectionRole(col, modeIdToCollectionName) {
 /**
  * Return true when this FLOAT variable should be emitted as a rem value.
  *
- * Semantics collection → spatial tokens: size/, border/, radius/
+ * Primitives collection → all spatial and typographic px values:
+ *   spacing/, border/, rounded/          — layout dimensions
+ *   font/size/, font/line-height/        — typographic sizes
+ *   font/spacing/                        — letter-spacing
+ *
+ * font/weight/ and non-spatial effects (depth, dispersion, refraction,
+ * frost, light-intensity, light-angle) are intentionally excluded —
+ * they are unitless or percentage-like values that must stay unit-free.
  */
 function shouldConvertToRem(variableName, role) {
   const lower = variableName.toLowerCase();
-  if (role === 'semantics') {
-    return lower.startsWith('size/')
+  if (role === 'primitives') {
+    return lower.startsWith('spacing/')
         || lower.startsWith('border/')
-        || lower.startsWith('radius/');
+        || lower.startsWith('rounded/')
+        || lower.startsWith('font/size/')
+        || lower.startsWith('font/line-height/')
+        || lower.startsWith('font/spacing/')
+        || lower.startsWith('effects/blur/')
+        || lower.startsWith('effects/position/')
+        || lower.startsWith('effects/spread/');
   }
   return false;
 }
@@ -231,6 +252,14 @@ function shouldConvertToRem(variableName, role) {
  */
 function pxToRem(px) {
   return px === 0 ? '0' : `${+(px / 16).toFixed(4)}rem`;
+}
+
+/**
+ * Canonical string key for a Figma color object, used to match effect
+ * colors back to the corresponding primitive CSS variable.
+ */
+function colorKey({ r, g, b, a }) {
+  return `${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)},${Math.round(a * 1000) / 1000}`;
 }
 
 // ─── Style Sheet Generation ───────────────────────────────────────────────────
@@ -266,12 +295,47 @@ function effectColor({ r, g, b, a }) {
  * Convert a single Figma effect to a CSS descriptor object, or null if
  * unsupported / invisible.
  *
+ * Uses reverse-lookup maps to replace raw numbers and colours with var()
+ * references to the corresponding primitive tokens where available.
+ *
  * Returns one of:
  *   { kind: 'uniform',     property, value }
  *   { kind: 'progressive', blurProperty, blurValue, maskGradient }
  */
-function figmaEffectToCss(effect) {
+function figmaEffectToCss(effect, { effectsBlurVarMap = {}, effectsPositionVarMap = {}, primitiveColorVarMap = {}, varCssNameMap = {} } = {}) {
   if (effect.visible === false) return null;
+
+  // Figma effect nodes carry a `boundVariables` map that records which properties
+  // are driven by a variable (radius, spread, offsetX, offsetY, color).
+  // We read these first so semantic variables (e.g. color/alpha/dark/10) are
+  // referenced directly, rather than resolved to a primitive by value matching.
+  const boundVar = propName => {
+    const bv = effect.boundVariables?.[propName];
+    if (!bv || bv.type !== 'VARIABLE_ALIAS') return null;
+    const cssName = varCssNameMap[bv.id];
+    return cssName ? `var(${cssName})` : null;
+  };
+
+  // Resolution order for each value type:
+  //   1. Figma bound variable  → var(--token-name)   [most accurate for color/spread/position]
+  //   2. Value reverse-lookup  → var(--effects-*-N)  [preferred for blur — bound variable may
+  //                                                    point to a wrong-category token in Figma]
+  //   3. Raw rem               → 0.5rem              [last resort]
+  // For blur radius the value-map takes priority because Figma can accidentally bind a radius
+  // to an effects/position token (same numeric value, different semantic category).
+  const blurStr   = r       => (effectsBlurVarMap[r] ? `var(${effectsBlurVarMap[r]})` : null) ?? boundVar('radius') ?? pxToRem(r);
+  const posXStr   = x       => boundVar('offsetX') ?? ((x >= 0 && effectsPositionVarMap[x]) ? `var(${effectsPositionVarMap[x]})` : pxToRem(x));
+  const posYStr   = y       => boundVar('offsetY') ?? ((y >= 0 && effectsPositionVarMap[y]) ? `var(${effectsPositionVarMap[y]})` : pxToRem(y));
+  // Spread: bound variable first; value-map skipped (naming collision between
+  // positive and negative spread tokens produces the same CSS custom property name).
+  const spreadStr = v       => boundVar('spread') ?? pxToRem(v);
+  // Color: bound variable first; then primitive reverse-lookup by raw RGBA value.
+  const colStr    = c       => {
+    const bv = boundVar('color');
+    if (bv) return bv;
+    const key = colorKey(c);
+    return primitiveColorVarMap[key] ? `var(${primitiveColorVarMap[key]})` : effectColor(c);
+  };
 
   // Progressive blur — has directional start/end offsets and two radii
   if (
@@ -300,7 +364,7 @@ function figmaEffectToCss(effect) {
     return {
       kind: 'progressive',
       blurProperty: cssProp,
-      blurValue:    `blur(${maxR}px)`,
+      blurValue:    `blur(${blurStr(maxR)})`,
       maskGradient: `linear-gradient(${gradientDir}, ${startColor}, ${endColor})`,
     };
   }
@@ -312,14 +376,17 @@ function figmaEffectToCss(effect) {
       const y      = effect.offset?.y ?? 0;
       const blur   = effect.radius ?? 0;
       const spread = effect.spread ?? 0;
-      const color  = effectColor(effect.color);
       const inset  = effect.type === 'INNER_SHADOW' ? 'inset ' : '';
-      return { kind: 'uniform', property: 'box-shadow', value: `${inset}${x}px ${y}px ${blur}px ${spread}px ${color}` };
+      return {
+        kind: 'uniform',
+        property: 'box-shadow',
+        value: `${inset}${posXStr(x)} ${posYStr(y)} ${blurStr(blur)} ${spreadStr(spread)} ${colStr(effect.color)}`,
+      };
     }
     case 'LAYER_BLUR':
-      return { kind: 'uniform', property: 'filter',          value: `blur(${effect.radius}px)` };
+      return { kind: 'uniform', property: 'filter',          value: `blur(${blurStr(effect.radius)})` };
     case 'BACKGROUND_BLUR':
-      return { kind: 'uniform', property: 'backdrop-filter', value: `blur(${effect.radius}px)` };
+      return { kind: 'uniform', property: 'backdrop-filter', value: `blur(${blurStr(effect.radius)})` };
     default:
       return null;
   }
@@ -341,7 +408,7 @@ function figmaEffectToCss(effect) {
  *   blur/thin-bottom        → .blur-thin-bottom
  *   liquid glass/base       → .liquid-glass-base
  */
-async function generateStyleSheet(fileKey, outputDir) {
+async function generateStyleSheet(fileKey, outputDir, { effectsBlurVarMap, effectsPositionVarMap, primitiveColorVarMap, varCssNameMap }) {
   const stylesData = await figmaGet(`/files/${fileKey}/styles`);
   const styles     = stylesData.meta?.styles ?? [];
 
@@ -527,7 +594,7 @@ async function generateStyleSheet(fileKey, outputDir) {
     for (const style of groupStyles) {
       const className = styleToClassSlug(style.name);
       const node      = effectNodes[style.node_id]?.document;
-      const decls     = (node?.effects ?? []).map(figmaEffectToCss).filter(Boolean);
+      const decls     = (node?.effects ?? []).map(e => figmaEffectToCss(e, { effectsBlurVarMap, effectsPositionVarMap, primitiveColorVarMap, varCssNameMap })).filter(Boolean);
 
       if (decls.length === 0) continue;
 
@@ -660,6 +727,38 @@ async function main() {
     varCssNameMap[id] = `--${toSlug(variable.name)}`;
   }
 
+  // ── Build reverse-lookup maps for generateStyleSheet ─────────────────────
+  //
+  // These maps let the style generator replace raw pixel values and colours in
+  // effect CSS with var() references to the primitive tokens.
+  //
+  // effectsBlurVarMap    : blur radius px value  → CSS var name
+  // effectsPositionVarMap: shadow offset px value → CSS var name (≥ 0 only)
+  // primitiveColorVarMap : {r,g,b,a} color key   → CSS var name
+  const effectsBlurVarMap     = {};
+  const effectsPositionVarMap = {};
+  const primitiveColorVarMap  = {};
+
+  for (const [id, variable] of Object.entries(allVariables)) {
+    const col = localCollections[variable.variableCollectionId];
+    if (!col || col.remote) continue;
+    if (collectionRole(col, modeIdToCollectionName) !== 'primitives') continue;
+
+    // Use first mode value (primitives are single-mode)
+    const rawValue = Object.values(variable.valuesByMode ?? {})[0];
+    const cssName  = varCssNameMap[id];
+    const lower    = variable.name.toLowerCase();
+
+    if (variable.resolvedType === 'COLOR' && rawValue && typeof rawValue === 'object' && 'r' in rawValue) {
+      primitiveColorVarMap[colorKey(rawValue)] = cssName;
+    } else if (variable.resolvedType === 'FLOAT' && typeof rawValue === 'number') {
+      if (lower.startsWith('effects/blur/'))     effectsBlurVarMap[rawValue]     = cssName;
+      if (lower.startsWith('effects/position/')) effectsPositionVarMap[rawValue] = cssName;
+      // effects/spread/ tokens have a naming collision (positive and negative share
+      // the same CSS name), so they are excluded and kept as raw px in styles.css.
+    }
+  }
+
   // ── Ensure output directory exists ───────────────────────────────────────
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
@@ -682,8 +781,8 @@ async function main() {
       .filter(Boolean);
 
     const role          = collectionRole(collection, modeIdToCollectionName);
-    const convertColors = role !== 'primitives'; // OKLCH for all non-primitive colors
-    const convertRem    = role === 'semantics';  // rem for spatial tokens in semantics only
+    const convertColors = role === 'primitives'; // OKLCH in primitives; semantics/typography inherit via var()
+    const convertRem    = role === 'primitives'; // rem in primitives; semantics/typography inherit via var()
 
     // Primitives grouping: COLOR → FONT → SPACING → BORDER → ROUNDED → EFFECTS.
     // Variables outside these groups fall into 'other' and appear at the end.
@@ -859,7 +958,7 @@ async function main() {
   console.log(`  Wrote: ${indexPath}`);
 
   // ── Generate style.css (text + effect style classes) ─────────────────────
-  await generateStyleSheet(FILE_KEY, OUTPUT_DIR);
+  await generateStyleSheet(FILE_KEY, OUTPUT_DIR, { effectsBlurVarMap, effectsPositionVarMap, primitiveColorVarMap, varCssNameMap });
 
   console.log('\nDone.');
 }

@@ -45,8 +45,8 @@ node --env-file=.env extract.js --file-key=AbCdEfGh --output=./tokens
 ```
 output/
   index.css                      ← imports all token files in the correct order
-  primitives.css                 ← raw values (colors, font sizes, spacing…)
-  semantics.css                  ← semantic aliases (e.g. --color-primary)
+  primitives.css                 ← converted values (oklch colors, rem sizes, …)
+  semantics.css                  ← semantic aliases via var() — inherit from primitives
   mall-of-semantics.css          ← Mall Of brand overrides for semantic tokens
   share-semantics.css            ← Share brand overrides for semantic tokens
   typography.css                 ← typography tokens (font, size, weight…)
@@ -55,7 +55,7 @@ output/
   styles.css                     ← utility classes for all Figma text & effect styles
 ```
 
-`index.css` loads token files in dependency order — primitives first, then semantics, then typography. `styles.css` is standalone and references the token variables defined in the other files.
+`index.css` loads token files in dependency order — primitives first, then semantics, then typography. `styles.css` comes last and references all token variables defined in the other files.
 
 ---
 
@@ -67,7 +67,7 @@ The script calls:
 
 - `GET /v1/files/{fileKey}/variables/local` — all variables defined in the file
 - `GET /v1/files/{fileKey}/styles` — all local text and effect styles
-- `GET /v1/files/{fileKey}/nodes?ids=…` — node data for effect styles (to read effect values)
+- `GET /v1/files/{fileKey}/nodes?ids=…` — node data for effect styles (to read effect values and variable bindings)
 
 ### 2. Handle extended collections
 
@@ -80,39 +80,51 @@ These are identified by the `isExtension: true` flag on the collection. Their mo
 Variable names follow the Figma path directly, converted to kebab-case:
 
 ```
-color/base/black  →  --color-base-black
-heading/font      →  --heading-font
+color/base/black    →  --color-base-black
+heading/font        →  --heading-font
+effects/spread/-2   →  --effects-spread--2   (negative numbers get a double-dash prefix)
+effects/spread/2    →  --effects-spread-2
 ```
 
 No collection name prefix is added.
 
 ### 4. Resolve aliases
 
-When a variable's value is a reference to another variable (`VARIABLE_ALIAS`), the script either:
-
-- Outputs a CSS `var()` reference (default behaviour), or
-- Follows the alias chain to the terminal value and outputs it directly (for OKLCH color conversion and rem conversion — see below)
+When a variable's value is a reference to another variable (`VARIABLE_ALIAS`), the script outputs a CSS `var()` reference. Semantics and typography collections are pure `var()` references — all value conversion happens in primitives and cascades through naturally.
 
 ### 5. Convert values
 
-| Figma type | Collection | CSS output |
-|------------|------------|------------|
-| `COLOR` | Primitives | `#rrggbb` / `rgba()` |
-| `COLOR` | Semantics & all non-primitives | `oklch(L C H)` / `oklch(L C H / A)` — resolved from alias chain |
-| `FLOAT` (spacing, border, rounded, font-size, line-height, letter-spacing, effects/blur, effects/position, effects/spread) | Primitives | plain number |
-| `FLOAT` (size/, border/, radius/) | Semantics | `Xrem` — resolved from alias chain and divided by 16 |
-| `FLOAT` (per-style size, line-height, spacing) | Typography | `Xrem` — resolved from alias chain and divided by 16 |
-| `FLOAT` (everything else) | Any | plain number |
+All value conversions happen in the **primitives** collection. Semantics and typography inherit converted values through `var()` references.
+
+| Figma type | Variable prefix | CSS output |
+|------------|----------------|------------|
+| `COLOR` | `color/*` (primitives) | `oklch(L C H)` / `oklch(L C H / A)` / `transparent` |
+| `COLOR` | Semantics, typography | `var(--color-*)` — inherits oklch from primitives |
+| `FLOAT` | `spacing/`, `border/`, `rounded/` | `Xrem` |
+| `FLOAT` | `font/size/`, `font/line-height/`, `font/spacing/` | `Xrem` |
+| `FLOAT` | `effects/blur/`, `effects/position/`, `effects/spread/` | `Xrem` |
+| `FLOAT` | `font/weight/`, `effects/depth/`, `effects/dispersion/`, etc. | plain number (unitless) |
 | `STRING` | Any | `"value"` |
 | `BOOLEAN` | Any | `1` or `0` |
 
 #### OKLCH color conversion
 
-Colors in semantic collections are resolved through the alias chain to their terminal `{r, g, b, a}` value and converted to `oklch()` using the Björn Ottosson Oklab matrices (sRGB → linearise → LMS → Oklab → OKLCH). This enables perceptually-uniform colour manipulation in consuming code.
+Colors in the primitives collection are converted to `oklch()` using the Björn Ottosson Oklab matrices (sRGB → linearise → LMS → Oklab → OKLCH). This enables perceptually-uniform colour manipulation in consuming code. Zero-alpha colors are emitted as `transparent`.
+
+Semantic and typography collections reference these via `var()` — no re-conversion needed.
 
 #### Rem conversion
 
-Numeric pixel values in the semantics and typography collections (spatial tokens and font-size / line-height / letter-spacing) are resolved through the alias chain and divided by 16 to produce `rem` values.
+Numeric pixel values in the primitives collection are divided by 16 to produce `rem` values for spatial tokens (spacing, border radius, font sizes, effect sizes). Unitless values such as font weights, opacity-style effect parameters, and zero values are left as plain numbers.
+
+#### Negative spread token naming
+
+Negative numbers in variable paths produce a double-dash in the CSS custom property name to avoid collisions with positive counterparts:
+
+```css
+--effects-spread--2: -0.125rem;   /* effects/spread/-2 */
+--effects-spread-2:   0.125rem;   /* effects/spread/2  */
+```
 
 ### 6. Group primitives.css
 
@@ -137,11 +149,12 @@ Collections marked `remote: true` are references to external libraries that may 
 
 One CSS file is generated per collection. `index.css` imports them all in the correct cascade order:
 
-1. `primitives.css` — raw tokens, no dependencies
-2. `semantics.css` — references primitives
+1. `primitives.css` — converted tokens, no dependencies
+2. `semantics.css` — `var()` references to primitives
 3. Semantics extensions — brand overrides for semantic tokens
-4. `typography.css` — references primitives
+4. `typography.css` — `var()` references to primitives
 5. Typography extensions — brand overrides for typography tokens
+6. `styles.css` — utility classes, references all of the above
 
 ### 10. Generate styles.css
 
@@ -160,7 +173,7 @@ CSS utility classes are created for each text style, referencing typography toke
 
 #### Effect styles
 
-CSS utility classes are created for each effect style:
+CSS utility classes are created for each effect style. All numeric values (blur radius, shadow offsets, spread) and colors reference primitive tokens via `var()`. The script uses Figma's `boundVariables` data on each effect to resolve variable references directly — including semantic color tokens like `color/alpha/dark/10`.
 
 | Figma style name | CSS class |
 |------------------|-----------|
@@ -168,7 +181,22 @@ CSS utility classes are created for each effect style:
 | `blur/base` | `.blur-base` |
 | `liquid-glass/base` | `.liquid-glass-base` |
 
-**Uniform blurs** output a direct `backdrop-filter: blur()` or `filter: blur()` declaration.
+Example shadow output:
+```css
+.shadow-raised {
+  box-shadow: var(--effects-position-0) var(--effects-position-4)
+              var(--effects-blur-8) var(--effects-spread--2)
+              var(--color-alpha-dark-10);
+}
+```
+
+**Uniform blurs** output a direct `backdrop-filter: blur()` or `filter: blur()` declaration referencing a blur token:
+
+```css
+.blur-base {
+  backdrop-filter: blur(var(--effects-blur-8));
+}
+```
 
 **Progressive blurs** (Figma `blurType: "PROGRESSIVE"`) output a `::after` pseudo-element with `backdrop-filter` and a `mask-image` gradient, computed from the effect's `startOffset`, `endOffset`, `startRadius`, and `radius` fields:
 
@@ -180,8 +208,8 @@ CSS utility classes are created for each effect style:
   content: '';
   position: absolute;
   inset: 0;
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(var(--effects-blur-4));
+  -webkit-backdrop-filter: blur(var(--effects-blur-4));
   mask-image: linear-gradient(to bottom, transparent, black);
   -webkit-mask-image: linear-gradient(to bottom, transparent, black);
   pointer-events: none;

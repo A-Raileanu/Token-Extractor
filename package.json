@@ -1,0 +1,6 @@
+{
+  "name": "maf-extractor",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Extract Figma design tokens and convert to CSS variables"
+}

@@ -241,8 +241,8 @@
   --components-navigation-top-bar-background: oklch(1 0 89.88);
   --components-button-color-primary: oklch(0.5884 0.2244 262.18);
   --components-button-color-primary-hover: oklch(0.5367 0.2286 262.17);
-  --components-input-field-size: var(--size-6xl);
   --components-button-color-primary-pressed: oklch(0.5018 0.2437 262.6);
+  --components-input-field-size: var(--size-6xl);
   --components-button-color-primary-on-surface: oklch(1 0 89.88);
   --components-button-color-secondary: oklch(0.589 0.2241 286.64);
   --components-button-color-secondary-hover: oklch(0.5228 0.251 286.17);
@@ -251,10 +251,10 @@
   --components-button-font-weight: var(--font-weight-500);
   --components-input-border-width: var(--border-1);
   --components-input-field-padding: var(--size-lg);
-  --components-input-shadow-color: oklch(0 0 0 / 0.1);
   --components-button-sm-padding-x: var(--size-sm);
-  --components-input-field-radius: var(--radius-sm);
+  --components-input-shadow-color: oklch(0 0 0 / 0.1);
   --components-button-sm-size: var(--size-4xl);
+  --components-input-field-radius: var(--radius-sm);
   --components-button-sm-radius: var(--radius-sm);
   --components-button-md-padding-x: var(--size-md);
   --components-button-md-size: var(--size-5xl);

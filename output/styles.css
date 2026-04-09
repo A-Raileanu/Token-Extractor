@@ -1,0 +1,213 @@
+
+/* ── Paragraph ─────────────────────────────────────────────────── */
+
+.paragraph-xxs {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-xxs-size);
+  line-height: var(--paragraph-xxs-line-height);
+  font-weight: var(--paragraph-xxs-weight);
+  letter-spacing: var(--paragraph-xxs-spacing);
+}
+
+.paragraph-xxs-strong {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-xxs-size);
+  line-height: var(--paragraph-xxs-line-height);
+  font-weight: var(--paragraph-xxs-weight-strong);
+  letter-spacing: var(--paragraph-xxs-spacing);
+}
+
+.paragraph-xs {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-xs-size);
+  line-height: var(--paragraph-xs-line-height);
+  font-weight: var(--paragraph-xs-weight);
+  letter-spacing: var(--paragraph-xs-spacing);
+}
+
+.paragraph-xs-strong {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-xs-size);
+  line-height: var(--paragraph-xs-line-height);
+  font-weight: var(--paragraph-xs-weight-strong);
+  letter-spacing: var(--paragraph-xs-spacing);
+}
+
+.paragraph-sm {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-sm-size);
+  line-height: var(--paragraph-sm-line-height);
+  font-weight: var(--paragraph-sm-weight);
+  letter-spacing: var(--paragraph-sm-spacing);
+}
+
+.paragraph-sm-strong {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-sm-size);
+  line-height: var(--paragraph-sm-line-height);
+  font-weight: var(--paragraph-sm-weight-strong);
+  letter-spacing: var(--paragraph-sm-spacing);
+}
+
+.paragraph-md {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-md-size);
+  line-height: var(--paragraph-md-line-height);
+  font-weight: var(--paragraph-md-weight);
+  letter-spacing: var(--paragraph-md-spacing);
+}
+
+.paragraph-md-strong {
+  font-family: var(--paragraph-font);
+  font-size: var(--paragraph-md-size);
+  line-height: var(--paragraph-md-line-height);
+  font-weight: var(--paragraph-md-weight-strong);
+  letter-spacing: var(--paragraph-md-spacing);
+}
+
+/* ── Subhead ────────────────────────────────────────────────────── */
+
+.subhead-sm {
+  font-family: var(--subhead-font);
+  font-size: var(--subhead-mobile-sm-size);
+  line-height: var(--subhead-mobile-sm-line-height);
+  font-weight: var(--subhead-mobile-sm-weight);
+  letter-spacing: var(--subhead-mobile-sm-spacing);
+}
+
+.subhead-md {
+  font-family: var(--subhead-font);
+  font-size: var(--subhead-mobile-md-size);
+  line-height: var(--subhead-mobile-md-line-height);
+  font-weight: var(--subhead-mobile-md-weight);
+  letter-spacing: var(--subhead-mobile-md-spacing);
+}
+
+.subhead-lg {
+  font-family: var(--subhead-font);
+  font-size: var(--subhead-mobile-lg-size);
+  line-height: var(--subhead-mobile-lg-line-height);
+  font-weight: var(--subhead-mobile-lg-weight);
+  letter-spacing: var(--subhead-mobile-lg-spacing);
+}
+
+/* ── Heading ────────────────────────────────────────────────────── */
+
+.heading-sm {
+  font-family: var(--heading-font);
+  font-size: var(--heading-mobile-sm-size);
+  line-height: var(--heading-mobile-sm-line-height);
+  font-weight: var(--heading-mobile-sm-weight);
+  letter-spacing: var(--heading-mobile-sm-spacing);
+}
+
+@media (min-width: 768px) {
+  .heading-sm {
+    font-size: var(--heading-desktop-sm-size);
+    line-height: var(--heading-desktop-sm-line-height);
+    font-weight: var(--heading-desktop-sm-weight);
+    letter-spacing: var(--heading-desktop-sm-spacing);
+  }
+}
+
+.heading-md {
+  font-family: var(--heading-font);
+  font-size: var(--heading-mobile-md-size);
+  line-height: var(--heading-mobile-md-line-height);
+  font-weight: var(--heading-mobile-md-weight);
+  letter-spacing: var(--heading-mobile-md-spacing);
+}
+
+@media (min-width: 768px) {
+  .heading-md {
+    font-size: var(--heading-desktop-md-size);
+    line-height: var(--heading-desktop-md-line-height);
+    font-weight: var(--heading-desktop-md-weight);
+    letter-spacing: var(--heading-desktop-md-spacing);
+  }
+}
+
+.heading-lg {
+  font-family: var(--heading-font);
+  font-size: var(--heading-mobile-lg-size);
+  line-height: var(--heading-mobile-lg-line-height);
+  font-weight: var(--heading-mobile-lg-weight);
+  letter-spacing: var(--heading-mobile-lg-spacing);
+}
+
+@media (min-width: 768px) {
+  .heading-lg {
+    font-size: var(--heading-desktop-lg-size);
+    line-height: var(--heading-desktop-lg-line-height);
+    font-weight: var(--heading-desktop-lg-weight);
+    letter-spacing: var(--heading-desktop-lg-spacing);
+  }
+}
+
+.heading-xl {
+  font-family: var(--heading-font);
+  font-size: var(--heading-desktop-xl-size);
+  line-height: var(--heading-desktop-xl-line-height);
+  font-weight: var(--heading-desktop-xl-weight);
+  letter-spacing: var(--heading-desktop-xl-spacing);
+}
+
+/* ── Shadow ────────────────────────────────────────────── */
+
+.shadow-overlay {
+  box-shadow: 0px 16px 24px -2px rgba(0, 0, 0, 0.1);
+}
+
+.shadow-raised {
+  box-shadow: 0px 4px 8px -2px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Liquid Glass ──────────────────────────────────────── */
+
+.liquid-glass-base {
+  box-shadow: 0px 12px 48px 0px rgba(0, 0, 0, 0.16);
+}
+
+.liquid-glass-transparent {
+  box-shadow: 0px 12px 48px 0px rgba(0, 0, 0, 0.12);
+}
+
+/* ── Blur ──────────────────────────────────────────────── */
+
+.blur-thin-top {
+  position: relative;
+}
+
+.blur-thin-top::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  mask-image: linear-gradient(to bottom, black, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent);
+  pointer-events: none;
+}
+
+.blur-base {
+  backdrop-filter: blur(8px);
+}
+
+.blur-thick {
+  backdrop-filter: blur(16px);
+}
+
+.blur-thin-bottom {
+  position: relative;
+}
+
+.blur-thin-bottom::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  mask-image: linear-gradient(to bottom, transparent, black);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black);
+  pointer-events: none;
+}

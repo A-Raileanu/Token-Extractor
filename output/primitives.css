@@ -4,7 +4,7 @@
   /* ── COLOR ─────────────────────────────────────────────── */
   --color-black: #000000;
   --color-white: #ffffff;
-  --color-transparent: rgba(255, 255, 255, 0);
+  --color-transparent: transparent;
   --color-global-gray-50: #f7f7f7;
   --color-global-gray-100: #f5f5f5;
   --color-global-gray-200: #e5e5e5;
@@ -482,8 +482,8 @@
   --font-family-montserrat: "Montserrat";
   --font-family-parkinsans: "Parkinsans";
   --font-family-tajawal: "Tajawal";
-  --font-family-vazirmatn: "Vazirmatn";
   --font-size-10: 10;
+  --font-family-vazirmatn: "Vazirmatn";
   --font-size-12: 12;
   --font-size-14: 14;
   --font-size-16: 16;
@@ -504,8 +504,8 @@
   --font-weight-400: 400;
   --font-weight-500: 500;
   --font-weight-600: 600;
-  --font-weight-700: 700;
   --font-line-height-10: 10;
+  --font-weight-700: 700;
   --font-line-height-14: 14;
   --font-line-height-16: 16;
   --font-line-height-18: 18;

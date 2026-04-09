@@ -2,7 +2,7 @@
 :root {
   --color-base-black: oklch(0 0 0);
   --color-base-white: oklch(1 0 89.88);
-  --color-base-transparent: oklch(1 0 89.88 / 0);
+  --color-base-transparent: transparent;
   --color-base-background: oklch(1 0 89.88);
   --color-neutral-surface-lighter: oklch(0.9761 0 89.88);
   --color-neutral-surface-light: oklch(0.9702 0 89.88);
@@ -237,12 +237,12 @@
   --color-alpha-dark-80: oklch(0 0 0 / 0.8);
   --color-alpha-dark-90: oklch(0 0 0 / 0.9);
   --color-alpha-dark-95: oklch(0 0 0 / 0.95);
-  --components-navigation-tab-bar-radius: var(--rounded-32);
   --components-navigation-top-bar-background: oklch(1 0 89.88);
+  --components-navigation-tab-bar-radius: var(--rounded-32);
   --components-button-color-primary: oklch(0.5884 0.2244 262.18);
   --components-button-color-primary-hover: oklch(0.5367 0.2286 262.17);
-  --components-button-color-primary-pressed: oklch(0.5018 0.2437 262.6);
   --components-input-field-size: var(--size-6xl);
+  --components-button-color-primary-pressed: oklch(0.5018 0.2437 262.6);
   --components-button-color-primary-on-surface: oklch(1 0 89.88);
   --components-button-color-secondary: oklch(0.589 0.2241 286.64);
   --components-button-color-secondary-hover: oklch(0.5228 0.251 286.17);
@@ -251,10 +251,10 @@
   --components-button-font-weight: var(--font-weight-500);
   --components-input-border-width: var(--border-1);
   --components-input-field-padding: var(--size-lg);
-  --components-button-sm-padding-x: var(--size-sm);
   --components-input-shadow-color: oklch(0 0 0 / 0.1);
-  --components-button-sm-size: var(--size-4xl);
+  --components-button-sm-padding-x: var(--size-sm);
   --components-input-field-radius: var(--radius-sm);
+  --components-button-sm-size: var(--size-4xl);
   --components-button-sm-radius: var(--radius-sm);
   --components-button-md-padding-x: var(--size-md);
   --components-button-md-size: var(--size-5xl);

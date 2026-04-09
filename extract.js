@@ -83,6 +83,7 @@ function colorToCss({ r, g, b, a }) {
   const B = Math.round(b * 255);
   const A = Math.round(a * 1000) / 1000; // 3 decimal places
 
+  if (A === 0) return 'transparent';
   if (A >= 1) {
     return `#${[R, G, B].map(v => v.toString(16).padStart(2, '0')).join('')}`;
   }
@@ -160,6 +161,7 @@ function colorToOklch({ r, g, b, a }) {
   const Hf = +(H.toFixed(2));
   const af = Math.round(a * 1000) / 1000;
 
+  if (af === 0) return 'transparent';
   return af >= 1
     ? `oklch(${Lf} ${Cf} ${Hf})`
     : `oklch(${Lf} ${Cf} ${Hf} / ${af})`;

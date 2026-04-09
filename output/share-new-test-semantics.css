@@ -250,8 +250,8 @@
   --components-button-color-secondary-on-surface: oklch(1 0 89.88);
   --components-button-font-weight: var(--font-weight-500);
   --components-input-border-width: var(--border-1);
-  --components-button-sm-padding-x: var(--size-sm);
   --components-input-shadow-color: oklch(0 0 0 / 0.1);
+  --components-button-sm-padding-x: var(--size-sm);
   --components-input-field-padding: var(--size-lg);
   --components-button-sm-size: var(--size-4xl);
   --components-input-field-radius: var(--radius-sm);

@@ -14,6 +14,8 @@ import path from 'path';
 
 const DEFAULT_FILE_KEY = 'HHqZsz18PO50YqqvOKaIfi';
 
+// Parse --key=value flags into a plain object.
+// A flag without a value (e.g. --dry-run) is stored as boolean true.
 const args = Object.fromEntries(
   process.argv.slice(2)
     .filter(a => a.startsWith('--'))
@@ -35,6 +37,8 @@ if (!TOKEN) {
 
 // ─── Figma API ────────────────────────────────────────────────────────────────
 
+// Thin wrapper around the Figma REST API.
+// Authenticates with the personal access token from the environment.
 async function figmaGet(endpoint) {
   const url = `https://api.figma.com/v1${endpoint}`;
   const res = await fetch(url, {
@@ -62,15 +66,6 @@ function toSlug(name) {
     .replace(/[^a-z0-9-]/g, '-')   // anything else → dash
     .replace(/-+/g, '-')            // collapse multiple dashes
     .replace(/^-|-$/g, '');         // trim leading/trailing dashes
-}
-
-/**
- * Build the full CSS variable name for a variable given its collection slug.
- * e.g. collection "maf-colors", variable "brand/primary/500"
- * → "--maf-colors-brand-primary-500"
- */
-function cssVarName(collectionSlug, variableName) {
-  return `--${collectionSlug}-${toSlug(variableName)}`;
 }
 
 /**
@@ -126,6 +121,13 @@ function valueKeyForMode(mode) {
 }
 
 // ─── Semantic Token Transformations ───────────────────────────────────────────
+//
+// Semantic colors are output as oklch() rather than hex/rgba because oklch is
+// a perceptually-uniform colour space — mixing, darkening, and lightening colours
+// in CSS (e.g. with color-mix()) produce predictable, visually-balanced results.
+//
+// The conversion pipeline: sRGB → linearise → LMS (cube-root) → Oklab → OKLCH.
+// Matrices by Björn Ottosson: https://bottosson.github.io/posts/oklab/
 
 /**
  * Linearise a sRGB channel (0–1) to linear light for OKLCH conversion.
@@ -355,6 +357,7 @@ async function generateStyleSheet(fileKey, outputDir) {
     effectNodes = nodesData.nodes ?? {};
   }
 
+  // Canonical size order used to sort variant names consistently.
   const VARIANT_ORDER = ['xxs', 'xs', 'sm', 'md', 'lg', 'xl'];
   const sortVariants  = arr =>
     [...arr].sort((a, b) => {
@@ -365,6 +368,13 @@ async function generateStyleSheet(fileKey, outputDir) {
   const lines = [];
 
   // ── Bucket text styles by category ─────────────────────────────────────────
+  //
+  // We read each style's name path (e.g. "heading/mobile/sm") and split it into:
+  //   category = "heading", platform = "mobile", variant = "sm"
+  //
+  // Heading styles from mobile and desktop platforms are merged into a single
+  // responsive class (.heading-sm) — mobile values as the default, desktop
+  // values wrapped in a @media (min-width: 768px) block.
   const paragraphEntries = [];
   const subheadVariants  = new Set();
   const headingMobile    = new Set();
@@ -377,7 +387,7 @@ async function generateStyleSheet(fileKey, outputDir) {
     if (category === 'paragraph') {
       paragraphEntries.push(parts);
     } else if (category === 'subhead') {
-      // subhead/mobile/sm → variant = sm
+      // subhead/mobile/sm → variant = sm (we always use the mobile token vars)
       if (parts[2]) subheadVariants.add(parts[2]);
     } else if (category === 'heading') {
       const platform = parts[1]; // 'desktop' | 'mobile'
@@ -406,6 +416,8 @@ async function generateStyleSheet(fileKey, outputDir) {
       return parts.slice(1).join('-');
     };
 
+    // Sort: xxs → xs → sm → sm-strong → md → md-strong → …
+    // Base sizes are ordered by VARIANT_ORDER; strong variants immediately follow.
     const sorted = paragraphEntries.sort((a, b) => {
       const oi = VARIANT_ORDER.indexOf(baseSlugOf(a)), oj = VARIANT_ORDER.indexOf(baseSlugOf(b));
       const order = (oi === -1 ? 99 : oi) - (oj === -1 ? 99 : oj);
@@ -414,10 +426,13 @@ async function generateStyleSheet(fileKey, outputDir) {
     });
 
     for (const parts of sorted) {
-      // Last segment may be "strong" (separate) or "sm-strong" (hyphenated)
+      // Figma encodes strong variants inconsistently:
+      //   "paragraph/sm/strong"  → parts = ['paragraph', 'sm', 'strong']
+      //   "paragraph/sm-strong"  → parts = ['paragraph', 'sm-strong']
+      // We normalise both into baseSlug="sm", isStrong=true.
       const lastPart  = parts[parts.length - 1];
       const isStrong  = lastPart === 'strong' || lastPart.endsWith('-strong');
-      // Base variant slug without the "-strong" suffix
+      // Strip the "-strong" suffix to get the base size name (e.g. "sm")
       const baseSlug  = isStrong
         ? (lastPart === 'strong'
             ? parts.slice(1, -1).join('-')          // ['paragraph','sm','strong'] → 'sm'
@@ -577,34 +592,50 @@ async function main() {
   console.log(`  Collections : ${totalCollections}`);
   console.log(`  Variables   : ${totalVariables}`);
 
-  // ── Build a modeId → collection name map (for extension suffix resolution) ──
+  // ── Build a modeId → collection name map ─────────────────────────────────
+  //
+  // Extended collections don't carry their own variable data — instead each of
+  // their modes has a parentModeId that points to a mode in the base collection.
+  // This map lets us look up the base collection's name from that parentModeId,
+  // which we use to:
+  //   a) classify the extension's role (semantics vs. typography)
+  //   b) generate a unique file name (e.g. "mall-of-semantics")
   const modeIdToCollectionName = {};
   for (const col of Object.values(localCollections)) {
     for (const mode of col.modes) {
       if (!col.isExtension) {
+        // Only index non-extension collections; extension modes are the consumers.
         modeIdToCollectionName[mode.modeId] = col.name;
       }
     }
   }
 
   // ── Build unique file-name slugs per collection ───────────────────────────
-  // For extended collections that share a display name, suffix with the base
-  // collection name (e.g. "mall-of-semantics", "mall-of-typography").
-  // Fall back to a numeric suffix if the base name can't be resolved.
+  //
+  // In the Figma file, brand extension collections share a display name with
+  // their base collection (e.g. both "Mall Of" and the base are called "Semantics"
+  // from different perspectives). We need a unique file name per collection to
+  // avoid overwriting output files.
+  //
+  // Strategy: if multiple collections share a slug, rename each extended one by
+  // appending the base collection name it extends (e.g. "mall-of-semantics",
+  // "share-typography"). Falls back to the raw collection ID as a suffix.
   const slugCount = {};
   const collectionFileSlug = {}; // colId → unique file slug
 
+  // First pass: count how many collections produce each slug.
   for (const [id, col] of Object.entries(localCollections)) {
     const base = toSlug(col.name);
     slugCount[base] = (slugCount[base] ?? 0) + 1;
     collectionFileSlug[id] = base;
   }
 
+  // Second pass: disambiguate slug collisions for extension collections.
   for (const [id, col] of Object.entries(localCollections)) {
     const base = toSlug(col.name);
     if (slugCount[base] > 1 && col.isExtension) {
       // Resolve base collection name via the first mode's parentModeId
-      const parentModeId = col.modes[0]?.parentModeId;
+      const parentModeId  = col.modes[0]?.parentModeId;
       const parentColName = parentModeId ? modeIdToCollectionName[parentModeId] : null;
       collectionFileSlug[id] = parentColName
         ? `${base}-${toSlug(parentColName)}`
@@ -613,9 +644,12 @@ async function main() {
   }
 
   // ── Build CSS variable name map (variable id → CSS var name) ─────────────
-  // For variables that belong to a base collection, use that collection's slug.
-  // Extended collections reference the same variable IDs, so we look up the
-  // variable's own collectionId for naming purposes.
+  //
+  // Maps every variable ID to its CSS custom property name.
+  // The name is derived solely from the variable's own path (e.g. "color/base/black"
+  // → "--color-base-black") — no collection prefix is added.
+  // This map is used both when emitting a variable's own declaration and when
+  // resolving a VARIABLE_ALIAS reference to a var() string.
   const collectionNameSlug = {}; // colId → slug used in CSS var names
   for (const [id, col] of Object.entries(localCollections)) {
     collectionNameSlug[id] = toSlug(col.name);
@@ -632,20 +666,27 @@ async function main() {
   const importPaths = [];
 
   // ── Generate one CSS file per collection ─────────────────────────────────
+  //
+  // Each Figma variable collection becomes one CSS file.
+  // Collections with multiple modes produce multiple CSS rule blocks:
+  //   mode 0 → :root { }         (default / English / Light)
+  //   mode N → [data-theme="…"] { }  (Arabic, Dark, brand variants, …)
   for (const [colId, collection] of Object.entries(localCollections)) {
     if (collection.remote) continue; // skip stale external library references
-    // Resolve variable list from the collection's variableIds array.
-    // This correctly handles extended collections that share variable IDs
-    // with a base collection (variable.variableCollectionId won't match here).
+
+    // Use the collection's own variableIds list to get variables.
+    // Extended collections share variable IDs with a base collection, so
+    // filtering by variable.variableCollectionId would miss them.
     const variables = (collection.variableIds ?? [])
       .map(vid => allVariables[vid])
       .filter(Boolean);
 
     const role          = collectionRole(collection, modeIdToCollectionName);
     const convertColors = role !== 'primitives'; // OKLCH for all non-primitive colors
-    const convertRem    = role === 'semantics'; // rem for spatial tokens in semantics
+    const convertRem    = role === 'semantics';  // rem for spatial tokens in semantics only
 
-    // For the primitives collection, pre-sort variables into groups.
+    // Primitives grouping: COLOR → FONT → SPACING → BORDER → ROUNDED → EFFECTS.
+    // Variables outside these groups fall into 'other' and appear at the end.
     const PRIMITIVE_GROUP_ORDER = ['color', 'font', 'spacing', 'border', 'rounded', 'effects'];
     const primitiveGroup = varName => {
       const first = varName.toLowerCase().split('/')[0];
@@ -693,31 +734,44 @@ async function main() {
         const rawValue = variable.valuesByMode?.[valueKey];
         const cssName  = varCssNameMap[variable.id];
 
+        // Determine the CSS output value.
+        //
+        // There are two kinds of raw values:
+        //   1. VARIABLE_ALIAS — a reference to another variable (Figma's alias system).
+        //      For most tokens we emit a CSS var() reference so the cascade works.
+        //      For OKLCH colors and rem spatial tokens we resolve the full alias chain
+        //      to the underlying primitive so we can convert the raw number/colour.
+        //   2. Direct value — a literal COLOR, FLOAT, STRING, or BOOLEAN.
+        //      These are formatted directly; OKLCH/rem conversions still apply.
         let cssValue;
 
         if (rawValue && typeof rawValue === 'object' && rawValue.type === 'VARIABLE_ALIAS') {
           if (convertColors && variable.resolvedType === 'COLOR') {
-            // Resolve alias chain → output OKLCH
+            // Resolve alias chain to its terminal { r, g, b, a } value and
+            // convert to oklch() for perceptually-uniform colour manipulation.
             const resolved = resolveAliasChain(rawValue, allVariables);
             const isColor  = resolved && typeof resolved === 'object' && 'r' in resolved;
             if (isColor) {
               cssValue = colorToOklch(resolved);
             } else {
+              // Alias target not found in this file — fall back to a var() reference.
               const t = varCssNameMap[rawValue.id];
               if (!t) console.warn(`  Warning: unresolved alias ${rawValue.id} for ${variable.name}`);
               cssValue = t ? `var(${t})` : `/* unresolved alias: ${rawValue.id} */`;
             }
           } else if (convertRem && variable.resolvedType === 'FLOAT' && shouldConvertToRem(variable.name, role)) {
-            // Resolve alias chain → output rem
+            // Resolve alias chain to its terminal px number and convert to rem.
             const resolved = resolveAliasChain(rawValue, allVariables);
             if (typeof resolved === 'number') {
               cssValue = pxToRem(resolved);
             } else {
+              // Can't resolve to a number — emit a var() reference instead.
               const t = varCssNameMap[rawValue.id];
               if (!t) console.warn(`  Warning: unresolved alias ${rawValue.id} for ${variable.name}`);
               cssValue = t ? `var(${t})` : `/* unresolved alias: ${rawValue.id} */`;
             }
           } else {
+            // Standard alias — emit a CSS var() so the token cascade is preserved.
             const targetName = varCssNameMap[rawValue.id];
             cssValue = targetName
               ? `var(${targetName})`
@@ -727,7 +781,7 @@ async function main() {
             }
           }
         } else {
-          // Direct value
+          // Direct (non-alias) value — apply the same conversion rules as above.
           if (convertColors && variable.resolvedType === 'COLOR' && rawValue && typeof rawValue === 'object' && 'r' in rawValue) {
             cssValue = colorToOklch(rawValue);
           } else if (convertRem && variable.resolvedType === 'FLOAT' && shouldConvertToRem(variable.name, role) && typeof rawValue === 'number') {
@@ -753,14 +807,24 @@ async function main() {
   }
 
   // ── Write index.css (ordered: primitives → semantics → semantics extensions → typography → typography extensions) ──
+  //
+  // The import order matters for the CSS cascade:
+  //   1. primitives.css  — raw tokens (no dependencies)
+  //   2. semantics.css   — references primitives
+  //   3. brand-semantics — brand overrides, reference the same primitive vars
+  //   4. typography.css  — references primitives
+  //   5. brand-typography— brand overrides for typography
+  //   6. styles.css      — utility classes, references all token vars above
   const fileSlugToColId = Object.fromEntries(
     Object.entries(collectionFileSlug).map(([id, slug]) => [slug, id])
   );
 
+  // Helper: resolve the canonical (base) slug for a collection ID.
   function baseNameOf(colId) {
     return toSlug(localCollections[colId]?.name ?? '');
   }
 
+  // Helper: return true when a collection extends another collection by name.
   function extendsCollectionNamed(colId, name) {
     const col = localCollections[colId];
     if (!col?.isExtension) return false;
@@ -774,11 +838,11 @@ async function main() {
     ...writtenFiles.filter(f => baseNameOf(fileSlugToColId[f.replace('.css','')]) === 'primitives'),
     // 2. semantics base
     ...writtenFiles.filter(f => baseNameOf(fileSlugToColId[f.replace('.css','')]) === 'semantics'),
-    // 3. semantics extensions
+    // 3. semantics extensions (brand overrides)
     ...writtenFiles.filter(f => extendsCollectionNamed(fileSlugToColId[f.replace('.css','')], 'semantics')),
     // 4. typography base
     ...writtenFiles.filter(f => baseNameOf(fileSlugToColId[f.replace('.css','')]) === 'typography'),
-    // 5. typography extensions
+    // 5. typography extensions (brand overrides)
     ...writtenFiles.filter(f => extendsCollectionNamed(fileSlugToColId[f.replace('.css','')], 'typography')),
     // 6. anything else not yet included
     ...writtenFiles.filter(f => {

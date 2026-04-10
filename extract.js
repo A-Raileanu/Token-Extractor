@@ -830,7 +830,13 @@ async function main() {
           lastGroup = group;
         }
 
-        const rawValue = variable.valuesByMode?.[valueKey];
+        // For extension collections: brand-specific overrides live in
+        // collection.variableOverrides[variableId][modeId], not in variable.valuesByMode.
+        // Check overrides first; fall back to the inherited base value.
+        const rawValue = (
+          collection.variableOverrides?.[variable.id]?.[mode.modeId]
+          ?? variable.valuesByMode?.[valueKey]
+        );
         const cssName  = varCssNameMap[variable.id];
 
         // Determine the CSS output value.
